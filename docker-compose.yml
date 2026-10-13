@@ -1,0 +1,62 @@
+name: avernaarena
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: avernaarena
+      POSTGRES_USER: averna
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/migrations/001_init.sql:/docker-entrypoint-initdb.d/001_init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U averna -d avernaarena"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [app]
+  api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      ADDR: :8080
+      DATABASE_URL: postgres://averna:${POSTGRES_PASSWORD}@db:5432/avernaarena?sslmode=disable
+      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      JUDGE_URL: http://judge:8090
+    depends_on:
+      db: { condition: service_healthy }
+      judge: { condition: service_healthy }
+    networks: [app]
+  judge:
+    build: ./judge
+    restart: unless-stopped
+    environment:
+      RUNNER_IMAGE: python:3.12-alpine
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8090/healthz | grep -q 'ok'"]
+      interval: 15s
+      timeout: 3s
+      retries: 10
+    networks: [app]
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    depends_on:
+      api: { condition: service_started }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    networks: [app]
+volumes:
+  postgres_data:
+networks:
+  app:
+    driver: bridge

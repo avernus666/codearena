@@ -1,0 +1,7 @@
+.env
+**/node_modules/
+**/dist/
+**/target/
+**/vendor/
+*.log
+.DS_Store
